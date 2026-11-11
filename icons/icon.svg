@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6a5cff"/>
+      <stop offset=".55" stop-color="#b06bff"/>
+      <stop offset="1" stop-color="#ff8fd6"/>
+    </linearGradient>
+    <radialGradient id="pink" cx=".42" cy=".38" r=".62">
+      <stop offset="0" stop-color="#fff0fa" stop-opacity=".75"/>
+      <stop offset=".45" stop-color="#ff7fd0" stop-opacity=".75"/>
+      <stop offset=".85" stop-color="#ff2fa6"/>
+      <stop offset="1" stop-color="#c8007a"/>
+    </radialGradient>
+    <radialGradient id="blue" cx=".42" cy=".38" r=".62">
+      <stop offset="0" stop-color="#effcff" stop-opacity=".75"/>
+      <stop offset=".45" stop-color="#6fd6ff" stop-opacity=".75"/>
+      <stop offset=".85" stop-color="#2f8cff"/>
+      <stop offset="1" stop-color="#1550c0"/>
+    </radialGradient>
+    <radialGradient id="yellow" cx=".42" cy=".38" r=".62">
+      <stop offset="0" stop-color="#fffdee" stop-opacity=".8"/>
+      <stop offset=".45" stop-color="#ffe46b" stop-opacity=".8"/>
+      <stop offset=".85" stop-color="#ffb21f"/>
+      <stop offset="1" stop-color="#d97800"/>
+    </radialGradient>
+    <radialGradient id="hl" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity=".8"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <g id="shine">
+      <ellipse cx="-.36" cy="-.42" rx=".42" ry=".24" fill="url(#hl)" transform="rotate(-37 -.36 -.42)"/>
+      <path d="M-.78 -.18 A.8 .8 0 0 1 -.5 -.64" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width=".07" stroke-linecap="round"/>
+      <path d="M.75 .28 A.8 .8 0 0 1 .4 .7" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width=".055" stroke-linecap="round"/>
+      <circle r=".985" fill="none" stroke="#fff" stroke-opacity=".85" stroke-width=".03"/>
+    </g>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g fill="#fff">
+    <circle cx="96" cy="110" r="7" opacity=".8"/>
+    <circle cx="420" cy="90" r="5" opacity=".7"/>
+    <circle cx="430" cy="300" r="6" opacity=".6"/>
+    <circle cx="80" cy="400" r="5" opacity=".6"/>
+  </g>
+  <g transform="translate(222 288) scale(132)">
+    <circle r="1" fill="url(#pink)"/>
+    <use href="#shine"/>
+  </g>
+  <g transform="translate(352 196) scale(78)">
+    <circle r="1" fill="url(#blue)"/>
+    <use href="#shine"/>
+  </g>
+  <g transform="translate(340 378) scale(52)">
+    <circle r="1" fill="url(#yellow)"/>
+    <use href="#shine"/>
+  </g>
+</svg>

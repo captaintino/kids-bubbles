@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Bubble Pop Party</title>
+  <meta name="description" content="Pop the shiny bubbles! A colorful bubble popping game for kids. Works offline.">
+  <meta name="theme-color" content="#7b5cff">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Bubbles">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preload" href="fonts/fredoka-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="game" aria-label="Bubble play area"></canvas>
+
+  <!-- Title screen -->
+  <section id="screen-title" class="screen active">
+    <div class="panel title-panel">
+      <h1 class="logo"><span>Bubble</span><span>Pop</span><span>Party!</span></h1>
+      <p class="tagline">Tap the bubbles to pop them!</p>
+      <div class="btn-col">
+        <button class="btn btn-pink" data-action="levels">
+          <span class="btn-icon">⭐</span> Levels
+        </button>
+        <button class="btn btn-blue" data-action="endless">
+          <span class="btn-icon">♾️</span> Endless
+        </button>
+        <button class="btn btn-green btn-small hidden" id="install-btn" data-action="install">
+          <span class="btn-icon">📲</span> Install
+        </button>
+      </div>
+      <div class="best-line" id="title-best"></div>
+    </div>
+    <button class="round-btn sound-btn" data-action="sound" aria-label="Toggle sound">🔊</button>
+  </section>
+
+  <!-- Level select -->
+  <section id="screen-levels" class="screen">
+    <div class="panel levels-panel">
+      <h2 class="heading">Pick a Level</h2>
+      <div class="level-grid" id="level-grid"></div>
+      <div class="total-stars" id="total-stars"></div>
+      <button class="btn btn-purple btn-small" data-action="home">
+        <span class="btn-icon">🏠</span> Back
+      </button>
+    </div>
+  </section>
+
+  <!-- In-game HUD -->
+  <section id="hud" class="hud">
+    <div class="hud-top">
+      <button class="round-btn" data-action="pause" aria-label="Pause">⏸</button>
+      <div class="score-pill"><span id="hud-score">0</span></div>
+      <div class="hearts" id="hud-hearts"></div>
+    </div>
+    <div class="hud-sub">
+      <div class="goal" id="hud-goal">
+        <div class="goal-bar"><div class="goal-fill" id="hud-goal-fill"></div></div>
+        <div class="goal-text" id="hud-goal-text">0 / 10</div>
+      </div>
+      <div class="target-chip hidden" id="hud-target">Pop only <span class="chip-bubble" id="hud-target-dot"></span> <b id="hud-target-name">Red</b></div>
+      <div class="best-chip hidden" id="hud-best">Best: <b id="hud-best-val">0</b></div>
+    </div>
+  </section>
+
+  <!-- Level intro banner -->
+  <div id="banner" class="banner" aria-live="polite">
+    <div class="banner-title" id="banner-title">Level 1</div>
+    <div class="banner-sub" id="banner-sub">Pop 10 bubbles!</div>
+  </div>
+
+  <!-- Pause -->
+  <section id="screen-pause" class="screen dim">
+    <div class="panel card">
+      <h2 class="heading">Paused</h2>
+      <div class="btn-col">
+        <button class="btn btn-green" data-action="resume"><span class="btn-icon">▶️</span> Play</button>
+        <button class="btn btn-orange btn-small" data-action="restart"><span class="btn-icon">🔄</span> Restart</button>
+        <button class="btn btn-purple btn-small" data-action="home"><span class="btn-icon">🏠</span> Home</button>
+      </div>
+      <button class="round-btn sound-btn inline" data-action="sound" aria-label="Toggle sound">🔊</button>
+    </div>
+  </section>
+
+  <!-- Result -->
+  <section id="screen-result" class="screen dim">
+    <div class="panel card">
+      <h2 class="heading" id="result-title">Great job!</h2>
+      <div class="result-stars" id="result-stars">
+        <span class="rstar">★</span><span class="rstar">★</span><span class="rstar">★</span>
+      </div>
+      <div class="result-score">Score <b id="result-score">0</b></div>
+      <div class="result-best" id="result-best"></div>
+      <div class="btn-col">
+        <button class="btn btn-green" id="result-next" data-action="next"><span class="btn-icon">➡️</span> Next</button>
+        <button class="btn btn-orange btn-small" data-action="restart"><span class="btn-icon">🔄</span> Again</button>
+        <button class="btn btn-purple btn-small" data-action="home"><span class="btn-icon">🏠</span> Home</button>
+      </div>
+    </div>
+  </section>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
