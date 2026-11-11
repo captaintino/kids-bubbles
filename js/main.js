@@ -1,5 +1,5 @@
 import * as sfx from './audio.js';
-import { COLORS, THEMES, LEVELS, endlessParams } from './levels.js';
+import { COLORS, THEMES, LEVELS, endlessParams, immortalParams } from './levels.js';
 import { buildSprites, buildSparkle, SPRITE_SIZE, SPRITE_R } from './sprites.js';
 
 // ---------------------------------------------------------------------------
@@ -9,7 +9,7 @@ const SAVE_KEY = 'bubble-pop-party.v1';
 const save = loadSave();
 
 function loadSave() {
-  const def = { unlocked: 1, stars: {}, best: 0, muted: false };
+  const def = { unlocked: 1, stars: {}, best: 0, bestImmortal: 0, muted: false };
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY));
     if (s && typeof s === 'object') return { ...def, ...s };
@@ -123,7 +123,7 @@ let bubbles = [];
 let particles = [];
 
 const state = {
-  mode: 'menu', // 'menu' | 'level' | 'endless'
+  mode: 'menu', // 'menu' | 'level' | 'endless' | 'immortal'
   levelIndex: 0,
   paused: false,
   over: false,
@@ -144,11 +144,12 @@ const state = {
 };
 
 function isPlaying() {
-  return (state.mode === 'level' || state.mode === 'endless') && !state.over;
+  return (state.mode === 'level' || state.mode === 'endless' || state.mode === 'immortal') && !state.over;
 }
 
 function currentParams() {
   if (state.mode === 'endless') return endlessParams(state.time);
+  if (state.mode === 'immortal') return immortalParams(state.time);
   if (state.mode === 'level') return state.params;
   return { rise: 9, spawn: 1.1, size: 1.15, burst: 0, specials: { star: 0.05 } };
 }
@@ -382,7 +383,7 @@ function popBubble(b, { chain = false } = {}) {
   if (counts(b)) {
     state.popped++;
     updateGoal();
-    if (!chain && state.popped % 10 === 0 && state.mode === 'endless') {
+    if (!chain && state.popped % (state.mode === 'immortal' ? 25 : 10) === 0 && (state.mode === 'endless' || state.mode === 'immortal')) {
       floatText(W / 2, H * 0.25, pick(PRAISE), '#fff', 46, 1.2);
     }
     if (state.mode === 'level' && state.popped >= state.goal) winLevel();
@@ -412,6 +413,10 @@ function boingBubble(b) {
 function addScore(n) {
   state.score += n;
   $('#hud-score').textContent = state.score;
+  if (state.mode === 'immortal' && state.score > save.bestImmortal) {
+    save.bestImmortal = state.score;
+    $('#hud-best-val').textContent = save.bestImmortal;
+  }
   const pill = $('.score-pill');
   pill.classList.remove('bump');
   void pill.offsetWidth;
@@ -419,7 +424,7 @@ function addScore(n) {
 }
 
 function bubbleEscaped(b) {
-  if (!isPlaying() || state.intro > 0) return;
+  if (!isPlaying() || state.intro > 0 || state.mode === 'immortal') return;
   if (!counts(b) || b.kind === 'star') return;
   state.hearts--;
   state.heartsLost++;
@@ -434,13 +439,29 @@ function bubbleEscaped(b) {
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
+function canvasPoint(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+// Fingers currently held down in Immortal mode (pointerId -> last position),
+// so dragging pops everything the finger passes over.
+const swipes = new Map();
+
 function onPointerDown(e) {
   e.preventDefault();
   sfx.unlock();
   if (state.paused) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+  const { x, y } = canvasPoint(e);
+
+  if (state.mode === 'immortal' && isPlaying()) {
+    swipes.set(e.pointerId, { x, y, trail: 0 });
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (!swipeThrough(x, y, x, y)) {
+      addParticle({ type: 'spark', x, y, vx: 0, vy: -30, size: 26 * unit, rot: 0, vrot: 3, life: 0.4, max: 0.4 });
+    }
+    return;
+  }
 
   // find the best bubble under the finger (generous hit area for little fingers)
   let best = null;
@@ -470,7 +491,58 @@ function onPointerDown(e) {
   popBubble(best);
 }
 
+// Pops every bubble within reach of the segment (x0,y0)->(x1,y1).
+// Using the whole segment means a fast swipe can't skip over a bubble.
+function swipeThrough(x0, y0, x1, y1) {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len2 = dx * dx + dy * dy;
+  let popped = 0;
+  for (const b of bubbles.slice()) {
+    if (b.popT >= 0 || b.chainDelay >= 0) continue;
+    let t = len2 > 0 ? ((b.x - x0) * dx + (b.y - y0) * dy) / len2 : 0;
+    t = clamp(t, 0, 1);
+    const d = Math.hypot(b.x - (x0 + dx * t), b.y - (y0 + dy * t));
+    if (d < b.r + 8) {
+      popBubble(b);
+      popped++;
+    }
+  }
+  return popped;
+}
+
+function onPointerMove(e) {
+  const prev = swipes.get(e.pointerId);
+  if (!prev) return;
+  e.preventDefault();
+  if (state.paused || state.mode !== 'immortal' || !isPlaying()) return;
+  const { x, y } = canvasPoint(e);
+  swipeThrough(prev.x, prev.y, x, y);
+
+  // sparkly trail behind the finger
+  prev.trail += Math.hypot(x - prev.x, y - prev.y);
+  const step = 16 * unit;
+  while (prev.trail > step) {
+    prev.trail -= step;
+    const k = Math.random();
+    addParticle({
+      type: 'trail', x: lerp(prev.x, x, k), y: lerp(prev.y, y, k), size: rand(10, 20) * unit,
+      hue: (clock * 120 + Math.random() * 40) % 360, life: 0.45, max: 0.45,
+    });
+  }
+  prev.x = x;
+  prev.y = y;
+}
+
+function onPointerEnd(e) {
+  swipes.delete(e.pointerId);
+}
+
 canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+canvas.addEventListener('pointermove', onPointerMove, { passive: false });
+canvas.addEventListener('pointerup', onPointerEnd);
+canvas.addEventListener('pointercancel', onPointerEnd);
+canvas.addEventListener('lostpointercapture', onPointerEnd);
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('pointerdown', () => sfx.unlock(), { capture: true });
 
@@ -490,8 +562,8 @@ function update(dt) {
     } else {
       state.time += dt;
     }
-    if (state.mode === 'endless') {
-      const p = endlessParams(state.time);
+    if (state.mode === 'endless' || state.mode === 'immortal') {
+      const p = currentParams();
       if (p.theme !== state.endlessTheme) { state.endlessTheme = p.theme; setTheme(p.theme); }
     }
   }
@@ -553,6 +625,7 @@ function update(dt) {
         break;
       case 'spark': p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vrot * dt; break;
       case 'text': p.y += p.vy * dt; p.vy *= 0.97; break;
+      case 'trail': p.y -= 20 * dt; break;
       case 'confetti':
         p.x += p.vx * dt + Math.sin(p.life * 5 + p.hue) * 40 * dt;
         p.y += p.vy * dt; p.rot += p.vrot * dt;
@@ -621,6 +694,16 @@ function drawParticles() {
         ctx.rotate(p.rot);
         ctx.drawImage(sparkleImg, -s / 2, -s / 2, s, s);
         ctx.restore();
+        break;
+      }
+      case 'trail': {
+        ctx.globalAlpha = k * 0.85;
+        const s = p.size * (0.4 + k * 0.6);
+        ctx.fillStyle = `hsl(${p.hue}, 100%, 72%)`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, s * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.drawImage(sparkleImg, p.x - s / 2, p.y - s / 2, s, s);
         break;
       }
       case 'text': {
@@ -712,9 +795,11 @@ function setupHud() {
   $('#hud-score').textContent = '0';
   renderHearts();
   const level = state.mode === 'level';
+  const immortal = state.mode === 'immortal';
+  $('#hud-hearts').classList.toggle('invisible', immortal);
   $('#hud-goal').classList.toggle('hidden', !level);
   $('#hud-best').classList.toggle('hidden', level);
-  $('#hud-best-val').textContent = save.best;
+  $('#hud-best-val').textContent = immortal ? save.bestImmortal : save.best;
   const tgt = $('#hud-target');
   if (state.target != null) {
     const c = COLORS[state.target];
@@ -799,7 +884,22 @@ function startEndless() {
   sfx.chime([0, 4, 7], 660, 0.1);
 }
 
+function startImmortal() {
+  sfx.unlock();
+  state.mode = 'immortal';
+  state.target = null;
+  resetRun();
+  state.intro = 1.2;
+  swipes.clear();
+  setupHud();
+  showScreen(null);
+  showBanner('Endless Immortal!', 'Swipe your finger to pop! 💫');
+  sfx.chime([0, 4, 7, 12], 660, 0.08);
+}
+
 function goHome() {
+  persist();
+  swipes.clear();
   resultTimers.forEach(clearTimeout);
   resultTimers = [];
   state.mode = 'menu';
@@ -890,6 +990,8 @@ function showResult({ stars, next, best, isBest = false }) {
 function pause() {
   if (!isPlaying() || state.paused) return;
   state.paused = true;
+  swipes.clear();
+  persist();
   showScreen('screen-pause');
 }
 function resumeGame() {
@@ -934,6 +1036,7 @@ function updateTitle() {
   const parts = [];
   if (total > 0) parts.push(`★ ${total} stars`);
   if (save.best > 0) parts.push(`🏆 Best: ${save.best}`);
+  if (save.bestImmortal > 0) parts.push(`💫 ${save.bestImmortal}`);
   $('#title-best').textContent = parts.join('   ');
 }
 
@@ -955,11 +1058,14 @@ document.addEventListener('click', (e) => {
   switch (action) {
     case 'levels': buildLevelGrid(); showScreen('screen-levels'); break;
     case 'endless': startEndless(); break;
+    case 'immortal': startImmortal(); break;
     case 'home': goHome(); break;
     case 'pause': pause(); break;
     case 'resume': resumeGame(); break;
     case 'restart':
-      if (state.mode === 'endless') startEndless(); else startLevel(state.levelIndex);
+      if (state.mode === 'endless') startEndless();
+      else if (state.mode === 'immortal') startImmortal();
+      else startLevel(state.levelIndex);
       break;
     case 'next':
       if (state.levelIndex < LEVELS.length - 1) startLevel(state.levelIndex + 1); else goHome();
@@ -1021,4 +1127,4 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 }
 
 // expose a tiny hook for automated testing
-window.__bubbles = { state, get bubbles() { return bubbles; }, startLevel, startEndless };
+window.__bubbles = { state, get bubbles() { return bubbles; }, startLevel, startEndless, startImmortal };

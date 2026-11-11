@@ -17,6 +17,7 @@ It's an installable **Progressive Web App**: once it has loaded, it works fully 
   
   You get up to 3 stars per level (lose no hearts for 3 stars). Finishing a level unlocks the next one.
 - **Endless**: bubbles keep coming faster and faster. Try to beat your best score!
+- **Endless Immortal**: a relaxed mode with no hearts, so you can't lose. Drag your finger around to pop every bubble it touches, leaving a sparkly trail. Use the pause button to stop. It keeps its own best score.
 
 You have 5 hearts. A bubble that floats away costs one heart. Progress, best score and the
 sound setting are saved on the device.

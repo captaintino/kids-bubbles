@@ -54,3 +54,15 @@ export function endlessParams(t) {
     theme: Math.floor(t / 40) % THEMES.length,
   };
 }
+
+// Endless Immortal: no hearts, swipe to pop. Gets busier, but stays relaxed.
+export function immortalParams(t) {
+  return {
+    rise: Math.max(3.4, 6 - t * 0.02),
+    spawn: Math.max(0.22, 0.6 - t * 0.004),
+    size: Math.max(0.85, 1.1 - t * 0.002),
+    burst: Math.min(0.45, 0.2 + t * 0.003),
+    specials: { star: 0.06, big: 0.08, snow: 0.025, rainbow: 0.02 },
+    theme: Math.floor(t / 40) % THEMES.length,
+  };
+}

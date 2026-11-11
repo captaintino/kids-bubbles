@@ -43,6 +43,7 @@ canvas#game {
 }
 
 .hidden { display: none !important; }
+.invisible { visibility: hidden !important; }
 
 /* ---------- Screens ---------- */
 .screen {
@@ -151,6 +152,7 @@ canvas#game {
   font-size: 18px;
   font-weight: 600;
   min-height: 22px;
+  text-align: center;
   text-shadow: 0 2px 0 rgba(80, 30, 150, .5);
 }
 
