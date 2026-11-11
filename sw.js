@@ -1,6 +1,6 @@
 // Service worker: caches the whole game so it works offline.
 // Bump VERSION whenever any file below changes so players get the update.
-const VERSION = 'v5';
+const VERSION = 'v6';
 const CACHE = `bubble-pop-party-${VERSION}`;
 
 const ASSETS = [

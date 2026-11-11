@@ -50,7 +50,7 @@ which service workers need.
 
 **Installing it:** open the page on your phone.
 - Android/Chrome: tap the **Install** button on the title screen, or use *Add to Home screen* in the menu.
-- iPhone/iPad Safari: tap Share, then **Add to Home Screen**.
+- iPhone/iPad: tap the **Install** button on the title screen for step-by-step instructions (Share, then **Add to Home Screen**). iOS has no install prompt that a web page can trigger. The button is hidden while running as the installed app.
 
 ### Updating
 

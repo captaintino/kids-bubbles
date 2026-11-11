@@ -1274,6 +1274,35 @@ function updateSoundButtons() {
 // ---------------------------------------------------------------------------
 let installPrompt = null;
 
+// iPhones/iPads have no install prompt: we show instructions instead.
+// (iPadOS 13+ says it is a Mac, so also check for a touch screen.)
+const UA = navigator.userAgent;
+const isIPad = /iPad/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isIOS = isIPad || /iPhone|iPod/.test(UA);
+const isIOSSafari = isIOS && !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\/|FBAN|FBAV|Instagram/.test(UA);
+
+// True when we are running as the installed app (opened from the Home Screen).
+// A normal Safari tab can't tell whether the game was installed earlier, only
+// whether *this* copy is the installed one.
+function isInstalled() {
+  const mq = (q) => window.matchMedia && window.matchMedia(q).matches;
+  return navigator.standalone === true || mq('(display-mode: standalone)') || mq('(display-mode: fullscreen)');
+}
+
+function updateInstallButton() {
+  const show = !isInstalled() && (!!installPrompt || isIOS);
+  $('#install-btn').classList.toggle('hidden', !show);
+}
+
+function showIOSInstallHelp() {
+  $('#share-where').textContent = isIPad ? 'at the top of Safari' : "in Safari's toolbar (usually at the bottom)";
+  $('#share-pointer').textContent = isIPad ? '👆' : '👇';
+  $('#share-pointer').classList.toggle('top', isIPad);
+  $('#share-pointer').classList.toggle('hidden', !isIOSSafari);
+  $('#install-not-safari').classList.toggle('hidden', isIOSSafari);
+  showScreen('screen-install');
+}
+
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
@@ -1306,10 +1335,12 @@ document.addEventListener('click', (e) => {
     case 'install':
       if (installPrompt) {
         installPrompt.prompt();
-        installPrompt.userChoice.finally(() => {
+        installPrompt.userChoice.then(() => {
           installPrompt = null;
-          $('#install-btn').classList.add('hidden');
-        });
+          updateInstallButton();
+        }, () => {});
+      } else if (isIOS) {
+        showIOSInstallHelp();
       }
       break;
   }
@@ -1328,11 +1359,11 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   installPrompt = e;
-  $('#install-btn').classList.remove('hidden');
+  updateInstallButton();
 });
 window.addEventListener('appinstalled', () => {
   installPrompt = null;
-  $('#install-btn').classList.add('hidden');
+  updateInstallButton();
 });
 
 // ---------------------------------------------------------------------------
@@ -1345,6 +1376,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => rebu
 sfx.setMuted(save.muted);
 updateSoundButtons();
 updateTitle();
+updateInstallButton();
 renderHearts();
 requestAnimationFrame((t) => { last = t; requestAnimationFrame(frame); });
 
