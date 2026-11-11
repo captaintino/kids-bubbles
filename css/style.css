@@ -249,8 +249,19 @@ canvas#game {
   display: grid;
   place-items: center;
   padding: 0;
+  line-height: 1;
   cursor: pointer;
   touch-action: manipulation;
+}
+/* drawn with CSS (not the ⏸ emoji) so it is centered the same on every device */
+.pause-icon {
+  display: block;
+  width: 18px;
+  height: 20px;
+  border-left: 6px solid #fff;
+  border-right: 6px solid #fff;
+  border-radius: 2px;
+  filter: drop-shadow(0 2px 0 rgba(84, 32, 196, .6));
 }
 .round-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(84, 32, 196, .7); }
 
@@ -405,10 +416,13 @@ canvas#game {
 }
 .hud.active { opacity: 1; visibility: visible; }
 .hud-top {
-  display: flex;
+  /* three columns so the score stays in the exact middle of the screen */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
 }
+.hud-top .pause-btn { justify-self: start; }
+.hud-top .hearts { justify-self: end; }
 .score-pill {
   min-width: 96px;
   padding: 4px 18px 6px;
