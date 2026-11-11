@@ -1,6 +1,7 @@
 import * as sfx from './audio.js';
 import { COLORS, THEMES, LEVELS, endlessParams, immortalParams } from './levels.js';
 import { buildSprites, buildSparkle, SPRITE_SIZE, SPRITE_R } from './sprites.js';
+import { SCENES, paintScene, createAnimator } from './scenes.js';
 
 // ---------------------------------------------------------------------------
 // Save data
@@ -9,15 +10,15 @@ const SAVE_KEY = 'bubble-pop-party.v1';
 const save = loadSave();
 
 function loadSave() {
-  const def = { unlocked: 1, stars: {}, best: 0, bestImmortal: 0, muted: false };
+  const def = { unlocked: 1, stars: {}, best: 0, bestImmortal: 0, muted: false, scene: 'party' };
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY));
     if (s && typeof s === 'object') return { ...def, ...s };
-  } catch { /* storage blocked: play without saving */ }
+  } catch (err) { /* storage blocked: play without saving */ }
   return def;
 }
 function persist() {
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch { /* ignore */ }
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (err) { /* ignore */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -31,12 +32,12 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 
-function hexToRgb(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
+let lastVibrate = 0;
 function vibrate(ms) {
-  try { navigator.vibrate && navigator.vibrate(ms); } catch { /* ignore */ }
+  const now = performance.now();
+  if (now - lastVibrate < 60) return;
+  lastVibrate = now;
+  try { navigator.vibrate && navigator.vibrate(ms); } catch (err) { /* ignore */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -49,70 +50,148 @@ let W = 0, H = 0, DPR = 1, unit = 1;
 const sprites = buildSprites(COLORS);
 const sparkleImg = buildSparkle();
 
+// Big tablets have huge screens: cap the number of canvas pixels so drawing
+// stays fast. Bubbles are smooth sprites, so a slightly lower resolution
+// on a large screen is not noticeable.
+// If the device can't keep up (e.g. older iPads) quality steps down by itself:
+// fewer canvas pixels and fewer particles.
+const QUALITY = [
+  { pixels: 2.4e6, particles: 240 },
+  { pixels: 1.3e6, particles: 150 },
+  { pixels: 0.75e6, particles: 90 },
+];
+let quality = 0;
+
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
   W = window.innerWidth;
   H = window.innerHeight;
+  DPR = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(QUALITY[quality].pixels / (W * H)));
+  DPR = Math.max(1, DPR);
   canvas.width = Math.round(W * DPR);
   canvas.height = Math.round(H * DPR);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   unit = clamp(Math.min(W, H) / 400, 0.8, 1.8);
   for (const b of bubbles) b.x0 = clamp(b.x0, b.r, Math.max(b.r, W - b.r));
+  textCache.clear();
+  rebuildBackground(false);
 }
 
 // ---------------------------------------------------------------------------
-// Background (gradient sky + floating bokeh + twinkles)
+// Background: the scene picture is painted once into a cached canvas and
+// copied to the screen each frame; only small moving bits are drawn live.
 // ---------------------------------------------------------------------------
-let themeCur = THEMES[0].map(hexToRgb);
-let themeTarget = themeCur.map((c) => c.slice());
+let bgCur = document.createElement('canvas');
+let bgPrev = document.createElement('canvas');
+let bgFade = 1;
+let palette = 0;
+let animator = createAnimator(save.scene);
 
+function rebuildBackground(fade) {
+  if (fade && bgCur.width === canvas.width && bgCur.height === canvas.height) {
+    [bgPrev, bgCur] = [bgCur, bgPrev];
+    bgFade = 0;
+  } else {
+    bgFade = 1;
+  }
+  bgCur.width = canvas.width;
+  bgCur.height = canvas.height;
+  const c = bgCur.getContext('2d');
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  paintScene(c, W, H, save.scene, palette);
+}
+
+// Level colors only change the backdrop in the "Bubble Party" world.
 function setTheme(i) {
-  themeTarget = THEMES[i % THEMES.length].map(hexToRgb);
+  if (palette === i % THEMES.length) return;
+  palette = i % THEMES.length;
+  if (save.scene === 'party') rebuildBackground(true);
 }
 
-const bokeh = Array.from({ length: 12 }, () => ({
-  fx: Math.random(), fy: Math.random(),
-  r: rand(30, 110), speed: rand(0.008, 0.025), a: rand(0.08, 0.2), drift: rand(0, Math.PI * 2),
-}));
-const twinkles = Array.from({ length: 26 }, () => ({
-  fx: Math.random(), fy: Math.random(), s: rand(6, 16), phase: rand(0, Math.PI * 2), speed: rand(1.2, 3),
-}));
+function setScene(id) {
+  if (save.scene === id) return;
+  save.scene = id;
+  persist();
+  animator = createAnimator(id);
+  rebuildBackground(true);
+}
 
-function drawBackground(t) {
-  for (let i = 0; i < 3; i++) {
-    for (let j = 0; j < 3; j++) themeCur[i][j] = lerp(themeCur[i][j], themeTarget[i][j], 0.03);
+function drawBackground(t, dt) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (bgFade < 1) {
+    bgFade = Math.min(1, bgFade + dt * 1.6);
+    ctx.drawImage(bgPrev, 0, 0);
+    ctx.globalAlpha = bgFade;
   }
-  const rgb = (c) => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, rgb(themeCur[0]));
-  g.addColorStop(0.55, rgb(themeCur[1]));
-  g.addColorStop(1, rgb(themeCur[2]));
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
-
-  // soft bokeh circles drifting up
-  for (const b of bokeh) {
-    b.fy -= b.speed * 0.016;
-    if (b.fy < -0.2) { b.fy = 1.2; b.fx = Math.random(); }
-    const x = b.fx * W + Math.sin(t * 0.3 + b.drift) * 20;
-    const y = b.fy * H;
-    ctx.globalAlpha = b.a;
-    const rg = ctx.createRadialGradient(x, y, 0, x, y, b.r * unit);
-    rg.addColorStop(0, 'rgba(255,255,255,0.9)');
-    rg.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = rg;
-    ctx.beginPath();
-    ctx.arc(x, y, b.r * unit, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // twinkly stars
-  for (const s of twinkles) {
-    const a = 0.5 + 0.5 * Math.sin(t * s.speed + s.phase);
-    ctx.globalAlpha = a * 0.8;
-    const size = s.s * (0.6 + a * 0.6);
-    ctx.drawImage(sparkleImg, s.fx * W - size / 2, s.fy * H - size / 2, size, size);
-  }
+  ctx.drawImage(bgCur, 0, 0);
   ctx.globalAlpha = 1;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  animator.draw(ctx, W, H, t, dt);
+  ctx.globalAlpha = 1;
+}
+
+// Icy edge glow for the snowflake slow-down, pre-rendered at low resolution.
+const frostImg = (() => {
+  const cv = document.createElement('canvas');
+  cv.width = 128;
+  cv.height = 128;
+  const c = cv.getContext('2d');
+  const g = c.createRadialGradient(64, 64, 30, 64, 64, 92);
+  g.addColorStop(0, 'rgba(200, 245, 255, 0)');
+  g.addColorStop(1, 'rgba(200, 245, 255, 0.6)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 128, 128);
+  return cv;
+})();
+
+// Little colored droplet sprites, one per hue bucket (made on first use).
+const dropCache = new Map();
+function dropSprite(hue) {
+  const key = ((Math.round(hue / 15) * 15) % 360 + 360) % 360;
+  let cv = dropCache.get(key);
+  if (!cv) {
+    cv = document.createElement('canvas');
+    cv.width = cv.height = 32;
+    const c = cv.getContext('2d');
+    c.fillStyle = `hsl(${key}, 100%, 70%)`;
+    c.beginPath(); c.arc(16, 16, 15, 0, Math.PI * 2); c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.85)';
+    c.beginPath(); c.arc(11, 11, 5, 0, Math.PI * 2); c.fill();
+    dropCache.set(key, cv);
+  }
+  return cv;
+}
+
+// Floating "+10" style text, rendered once per distinct text/color/size.
+const textCache = new Map();
+function textSprite(text, color, size) {
+  const key = `${text}|${color}|${size | 0}`;
+  let cv = textCache.get(key);
+  if (cv) return cv;
+  if (textCache.size > 80) textCache.clear();
+  const scale = DPR;
+  const font = `700 ${size}px Fredoka, ui-rounded, system-ui, sans-serif`;
+  const m = ctx.measureText ? (ctx.font = font, ctx.measureText(text).width) : size * text.length * 0.6;
+  const lw = Math.max(4, size * 0.16);
+  const wpx = m + lw * 2 + 4;
+  const hpx = size * 1.3 + lw * 2;
+  cv = document.createElement('canvas');
+  cv.width = Math.ceil(wpx * scale);
+  cv.height = Math.ceil(hpx * scale);
+  const c = cv.getContext('2d');
+  c.scale(scale, scale);
+  c.font = font;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.lineJoin = 'round';
+  c.lineWidth = lw;
+  c.strokeStyle = 'rgba(110, 40, 190, 0.85)';
+  c.strokeText(text, wpx / 2, hpx / 2);
+  c.fillStyle = color;
+  c.fillText(text, wpx / 2, hpx / 2);
+  cv.cssW = wpx;
+  cv.cssH = hpx;
+  textCache.set(key, cv);
+  return cv;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,13 +281,13 @@ function makeBubble(kind, opts = {}) {
       if (!close) break;
     }
   }
-  const color = opts.color ?? (kind === 'normal' || kind === 'big' ? chooseColor() : randInt(0, COLORS.length - 1));
+  const color = opts.color != null ? opts.color : (kind === 'normal' || kind === 'big' ? chooseColor() : randInt(0, COLORS.length - 1));
   const b = {
     kind,
     color,
     x0: x,
     x,
-    y: opts.y ?? H + r * 1.3,
+    y: opts.y != null ? opts.y : H + r * 1.3,
     vx: opts.vx || 0,
     r,
     vy: ((H + r * 2.6) / p.rise) * rand(0.88, 1.12) * (kind === 'big' ? 0.8 : 1),
@@ -248,24 +327,29 @@ function spawn() {
 // ---------------------------------------------------------------------------
 // Particles & floating text
 // ---------------------------------------------------------------------------
+function maxParticles() { return QUALITY[quality].particles; }
 function addParticle(p) {
-  if (particles.length > 350) particles.shift();
+  if (particles.length >= maxParticles()) return;
   particles.push(p);
 }
 
-function burst(x, y, r, hue, big = false) {
-  const n = big ? 22 : 12;
-  addParticle({ type: 'ring', x, y, r: r * 0.9, vr: r * 5, life: 0.35, max: 0.35, hue });
+function burst(x, y, r, hue, big = false, light = false) {
+  const n = (big ? 14 : 8) >> (light ? 1 : 0);
+  addParticle({
+    type: 'ring', x, y, r: r * 0.9, vr: r * 5, life: 0.35, max: 0.35,
+    color: hue == null ? '#ffffff' : `hsl(${hue}, 100%, 85%)`,
+  });
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + rand(-0.2, 0.2);
     const sp = rand(120, 320) * unit * (big ? 1.3 : 1);
     addParticle({
       type: 'drop', x: x + Math.cos(a) * r * 0.8, y: y + Math.sin(a) * r * 0.8,
-      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, size: rand(3, 7) * unit,
-      life: rand(0.4, 0.7), max: 0.7, hue: hue == null ? randInt(0, 360) : hue + rand(-15, 15),
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, size: rand(3.5, 7.5) * unit,
+      life: rand(0.4, 0.7), max: 0.7, img: dropSprite(hue == null ? randInt(0, 360) : hue + rand(-15, 15)),
     });
   }
-  for (let i = 0; i < (big ? 7 : 3); i++) {
+  const sparks = light ? 1 : big ? 4 : 2;
+  for (let i = 0; i < sparks; i++) {
     addParticle({
       type: 'spark', x: x + rand(-r, r) * 0.6, y: y + rand(-r, r) * 0.6,
       vx: rand(-60, 60), vy: rand(-120, -20), size: rand(14, 28) * unit,
@@ -275,7 +359,9 @@ function burst(x, y, r, hue, big = false) {
 }
 
 function floatText(x, y, text, color = '#fff', size = 30, life = 0.9) {
-  addParticle({ type: 'text', x, y, vy: -70, text, color, size: size * unit, life, max: life });
+  // text is important feedback: make room for it even when particles are maxed out
+  if (particles.length >= maxParticles()) particles.shift();
+  addParticle({ type: 'text', x, y, vy: -70, img: textSprite(text, color, size * unit), life, max: life });
 }
 
 function confetti(count = 80) {
@@ -283,7 +369,7 @@ function confetti(count = 80) {
     addParticle({
       type: 'confetti', x: rand(0, W), y: rand(-H * 0.3, -10), vx: rand(-60, 60), vy: rand(60, 200),
       size: rand(7, 13) * unit, rot: rand(0, 6), vrot: rand(-8, 8), hue: randInt(0, 360),
-      life: rand(2.2, 3.4), max: 3.4,
+      color: `hsl(${randInt(0, 360)}, 100%, 62%)`, life: rand(2.2, 3.4), max: 3.4,
     });
   }
 }
@@ -306,7 +392,8 @@ function popBubble(b, { chain = false } = {}) {
   b.popT = 0;
   b.chainDelay = -1;
   const hue = hueOf(b);
-  burst(b.x, b.y, b.r, hue, b.kind !== 'normal' && b.kind !== 'small');
+  burst(b.x, b.y, b.r, hue, b.kind !== 'normal' && b.kind !== 'small', chain || swipeBurst > 2);
+  swipeBurst++;
 
   const playing = isPlaying();
   const sizePitch = clamp(baseRadius() / b.r, 0.6, 1.6);
@@ -410,17 +497,34 @@ function boingBubble(b) {
   floatText(b.x, b.y - b.r, 'Not that one!', '#fff', 22, 0.8);
 }
 
+// The HUD is updated at most once per frame (in flushHud), not once per pop,
+// so a big chain of pops doesn't make the browser redo layout over and over.
+let hudDirty = false;
+let lastBump = 0;
+const scoreEl = $('#hud-score');
+const scorePill = $('.score-pill');
+
 function addScore(n) {
   state.score += n;
-  $('#hud-score').textContent = state.score;
-  if (state.mode === 'immortal' && state.score > save.bestImmortal) {
-    save.bestImmortal = state.score;
-    $('#hud-best-val').textContent = save.bestImmortal;
+  if (state.mode === 'immortal' && state.score > save.bestImmortal) save.bestImmortal = state.score;
+  hudDirty = true;
+}
+
+function flushHud() {
+  if (!hudDirty) return;
+  hudDirty = false;
+  scoreEl.textContent = state.score;
+  if (state.mode === 'immortal') $('#hud-best-val').textContent = save.bestImmortal;
+  if (state.mode === 'level') {
+    const n = Math.min(state.popped, state.goal);
+    $('#hud-goal-text').textContent = `${n} / ${state.goal}`;
+    $('#hud-goal-fill').style.width = `${(n / state.goal) * 100}%`;
   }
-  const pill = $('.score-pill');
-  pill.classList.remove('bump');
-  void pill.offsetWidth;
-  pill.classList.add('bump');
+  const now = performance.now();
+  if (now - lastBump > 200 && scorePill.animate) {
+    lastBump = now;
+    scorePill.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }], { duration: 220, easing: 'ease-out' });
+  }
 }
 
 function bubbleEscaped(b) {
@@ -439,24 +543,23 @@ function bubbleEscaped(b) {
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
-function canvasPoint(e) {
+function canvasPoint(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  return { x: clientX - rect.left, y: clientY - rect.top };
 }
 
 // Fingers currently held down in Immortal mode (pointerId -> last position),
 // so dragging pops everything the finger passes over.
 const swipes = new Map();
 
-function onPointerDown(e) {
-  e.preventDefault();
+// id: which finger (pointerId or touch identifier); clientX/Y: page position
+function fingerDown(id, clientX, clientY) {
   sfx.unlock();
   if (state.paused) return;
-  const { x, y } = canvasPoint(e);
+  const { x, y } = canvasPoint(clientX, clientY);
 
   if (state.mode === 'immortal' && isPlaying()) {
-    swipes.set(e.pointerId, { x, y, trail: 0 });
-    try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    swipes.set(id, { x, y, trail: 0 });
     if (!swipeThrough(x, y, x, y)) {
       addParticle({ type: 'spark', x, y, vx: 0, vy: -30, size: 26 * unit, rot: 0, vrot: 3, life: 0.4, max: 0.4 });
     }
@@ -511,12 +614,11 @@ function swipeThrough(x0, y0, x1, y1) {
   return popped;
 }
 
-function onPointerMove(e) {
-  const prev = swipes.get(e.pointerId);
+function fingerMove(id, clientX, clientY) {
+  const prev = swipes.get(id);
   if (!prev) return;
-  e.preventDefault();
   if (state.paused || state.mode !== 'immortal' || !isPlaying()) return;
-  const { x, y } = canvasPoint(e);
+  const { x, y } = canvasPoint(clientX, clientY);
   swipeThrough(prev.x, prev.y, x, y);
 
   // sparkly trail behind the finger
@@ -527,30 +629,65 @@ function onPointerMove(e) {
     const k = Math.random();
     addParticle({
       type: 'trail', x: lerp(prev.x, x, k), y: lerp(prev.y, y, k), size: rand(10, 20) * unit,
-      hue: (clock * 120 + Math.random() * 40) % 360, life: 0.45, max: 0.45,
+      img: dropSprite(clock * 120 + Math.random() * 40), life: 0.45, max: 0.45,
     });
   }
   prev.x = x;
   prev.y = y;
 }
 
-function onPointerEnd(e) {
-  swipes.delete(e.pointerId);
+function fingerUp(id) {
+  swipes.delete(id);
 }
 
-canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
-canvas.addEventListener('pointermove', onPointerMove, { passive: false });
-canvas.addEventListener('pointerup', onPointerEnd);
-canvas.addEventListener('pointercancel', onPointerEnd);
-canvas.addEventListener('lostpointercapture', onPointerEnd);
+const noScroll = { passive: false };
+if (window.PointerEvent) {
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    fingerDown(e.pointerId, e.clientX, e.clientY);
+  }, noScroll);
+  canvas.addEventListener('pointermove', (e) => {
+    if (!swipes.has(e.pointerId)) return;
+    e.preventDefault();
+    fingerMove(e.pointerId, e.clientX, e.clientY);
+  }, noScroll);
+  const up = (e) => fingerUp(e.pointerId);
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('lostpointercapture', up);
+} else {
+  // Older browsers (e.g. iPads on iOS 12) have touch events but no pointer events.
+  const each = (e, fn) => {
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      fn(t.identifier, t.clientX, t.clientY);
+    }
+  };
+  canvas.addEventListener('touchstart', (e) => { e.preventDefault(); each(e, fingerDown); }, noScroll);
+  canvas.addEventListener('touchmove', (e) => { e.preventDefault(); each(e, fingerMove); }, noScroll);
+  const end = (e) => { sfx.unlock(); each(e, fingerUp); };
+  canvas.addEventListener('touchend', end);
+  canvas.addEventListener('touchcancel', end);
+  let mouseDown = false;
+  canvas.addEventListener('mousedown', (e) => { mouseDown = true; fingerDown('mouse', e.clientX, e.clientY); });
+  window.addEventListener('mousemove', (e) => { if (mouseDown) fingerMove('mouse', e.clientX, e.clientY); });
+  window.addEventListener('mouseup', () => { mouseDown = false; fingerUp('mouse'); });
+}
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-window.addEventListener('pointerdown', () => sfx.unlock(), { capture: true });
+// unlock sound on the very first touch anywhere (iOS needs it inside a tap)
+for (const type of ['pointerdown', 'touchstart', 'touchend', 'mousedown']) {
+  window.addEventListener(type, () => sfx.unlock(), { capture: true, passive: true });
+}
+// stop pinch-zoom on older iOS, which ignores user-scalable=no
+document.addEventListener('gesturestart', (e) => e.preventDefault());
 
 // ---------------------------------------------------------------------------
 // Update & render
 // ---------------------------------------------------------------------------
 let last = performance.now();
 let clock = 0;
+let swipeBurst = 0; // pops so far this frame: extra ones get lighter effects
 
 function update(dt) {
   clock += dt;
@@ -616,7 +753,11 @@ function update(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     p.life -= dt;
-    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    if (p.life <= 0) {
+      particles[i] = particles[particles.length - 1];
+      particles.pop();
+      continue;
+    }
     switch (p.type) {
       case 'ring': p.r += p.vr * dt; p.vr *= 0.9; break;
       case 'drop':
@@ -654,13 +795,14 @@ function drawBubble(b) {
     sx *= pulse; sy *= pulse;
   }
   ctx.globalAlpha = alpha;
-  ctx.save();
-  ctx.translate(b.x, b.y);
-  if (b.kind === 'rainbow') ctx.rotate(clock * 1.5);
-  ctx.scale(sx, sy);
+  if (b.kind === 'rainbow') {
+    const c = Math.cos(clock * 1.5);
+    const s = Math.sin(clock * 1.5);
+    ctx.setTransform(DPR * sx * c, DPR * sx * s, -DPR * sy * s, DPR * sy * c, DPR * b.x, DPR * b.y);
+  } else {
+    ctx.setTransform(DPR * sx, 0, 0, DPR * sy, DPR * b.x, DPR * b.y);
+  }
   ctx.drawImage(b.sprite, -size / 2, -size / 2, size, size);
-  ctx.restore();
-  ctx.globalAlpha = 1;
 }
 
 function drawParticles() {
@@ -669,68 +811,55 @@ function drawParticles() {
     switch (p.type) {
       case 'ring':
         ctx.globalAlpha = k * 0.9;
-        ctx.strokeStyle = p.hue == null ? '#fff' : `hsl(${p.hue}, 100%, 85%)`;
+        ctx.strokeStyle = p.color;
         ctx.lineWidth = 4 * unit * k + 1;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         ctx.stroke();
         break;
-      case 'drop':
+      case 'drop': {
         ctx.globalAlpha = Math.min(1, k * 1.5);
-        ctx.fillStyle = `hsl(${p.hue}, 100%, 70%)`;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * (0.4 + k * 0.6), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.8)';
-        ctx.beginPath();
-        ctx.arc(p.x - p.size * 0.25, p.y - p.size * 0.25, p.size * 0.3 * k, 0, Math.PI * 2);
-        ctx.fill();
+        const s = p.size * (0.4 + k * 0.6) * 2;
+        ctx.drawImage(p.img, p.x - s / 2, p.y - s / 2, s, s);
         break;
+      }
       case 'spark': {
         ctx.globalAlpha = Math.min(1, k * 1.6);
         const s = p.size * (0.5 + k * 0.5);
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rot);
+        const c = Math.cos(p.rot);
+        const n = Math.sin(p.rot);
+        ctx.setTransform(DPR * c, DPR * n, -DPR * n, DPR * c, DPR * p.x, DPR * p.y);
         ctx.drawImage(sparkleImg, -s / 2, -s / 2, s, s);
-        ctx.restore();
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
         break;
       }
       case 'trail': {
         ctx.globalAlpha = k * 0.85;
         const s = p.size * (0.4 + k * 0.6);
-        ctx.fillStyle = `hsl(${p.hue}, 100%, 72%)`;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, s * 0.35, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.drawImage(p.img, p.x - s * 0.35, p.y - s * 0.35, s * 0.7, s * 0.7);
         ctx.drawImage(sparkleImg, p.x - s / 2, p.y - s / 2, s, s);
         break;
       }
       case 'text': {
         const appear = Math.min(1, (p.max - p.life) / 0.12);
         ctx.globalAlpha = Math.min(1, k * 2.5);
-        const size = p.size * (0.6 + appear * 0.4);
-        ctx.font = `700 ${size}px Fredoka, ui-rounded, system-ui, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.lineJoin = 'round';
-        ctx.lineWidth = Math.max(4, size * 0.16);
-        ctx.strokeStyle = 'rgba(110, 40, 190, 0.85)';
-        ctx.strokeText(p.text, p.x, p.y);
-        ctx.fillStyle = p.color;
-        ctx.fillText(p.text, p.x, p.y);
+        const sc = 0.6 + appear * 0.4;
+        const w = p.img.cssW * sc;
+        const h = p.img.cssH * sc;
+        ctx.drawImage(p.img, p.x - w / 2, p.y - h / 2, w, h);
         break;
       }
-      case 'confetti':
+      case 'confetti': {
         ctx.globalAlpha = Math.min(1, k * 3);
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rot);
-        ctx.scale(1, Math.cos(p.rot * 1.7));
-        ctx.fillStyle = `hsl(${p.hue}, 100%, 62%)`;
+        const c = Math.cos(p.rot);
+        const n = Math.sin(p.rot);
+        const sy = Math.cos(p.rot * 1.7);
+        ctx.setTransform(DPR * c, DPR * n, -DPR * n * sy, DPR * c * sy, DPR * p.x, DPR * p.y);
+        ctx.fillStyle = p.color;
         ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
-        ctx.restore();
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
         break;
+      }
     }
   }
   ctx.globalAlpha = 1;
@@ -739,23 +868,53 @@ function drawParticles() {
 function drawFrost() {
   const k = clamp((1 - state.timeScale) / 0.6, 0, 1);
   if (k <= 0.01) return;
-  const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
-  g.addColorStop(0, 'rgba(200, 245, 255, 0)');
-  g.addColorStop(1, `rgba(200, 245, 255, ${0.55 * k})`);
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = k;
+  ctx.drawImage(frostImg, 0, 0, W, H);
+  ctx.globalAlpha = 1;
 }
 
+let lastDt = 0.016;
 function render() {
-  drawBackground(clock);
+  drawBackground(clock, lastDt);
   for (const b of bubbles) drawBubble(b);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.globalAlpha = 1;
   drawFrost();
   drawParticles();
+  flushHud();
+}
+
+// Watch how long frames take; if they are consistently slow, lower the quality.
+const perf = { frames: 0, time: 0, slow: 0, hold: 3 };
+function watchPerformance(rawDt) {
+  if (document.hidden || state.paused || rawDt > 0.5) return;
+  if (perf.hold > 0) { perf.hold -= rawDt; return; }
+  perf.frames++;
+  perf.time += rawDt;
+  if (perf.time < 1.5) return; // judge in 1.5 second windows
+  const avg = perf.time / perf.frames;
+  perf.frames = 0;
+  perf.time = 0;
+  if (avg > 0.024 && quality < QUALITY.length - 1) {
+    perf.slow++;
+    if (perf.slow >= 2) {
+      quality++;
+      perf.slow = 0;
+      perf.hold = 2;
+      resize();
+    }
+  } else {
+    perf.slow = 0;
+  }
 }
 
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const rawDt = (now - last) / 1000;
+  watchPerformance(rawDt);
+  const dt = Math.min(0.05, rawDt);
   last = now;
+  lastDt = dt;
+  swipeBurst = 0;
   update(dt);
   render();
   requestAnimationFrame(frame);
@@ -785,14 +944,15 @@ function renderHearts(anim) {
 }
 
 function updateGoal() {
-  if (state.mode !== 'level') return;
-  const n = Math.min(state.popped, state.goal);
-  $('#hud-goal-text').textContent = `${n} / ${state.goal}`;
-  $('#hud-goal-fill').style.width = `${(n / state.goal) * 100}%`;
+  hudDirty = true;
 }
 
 function setupHud() {
   $('#hud-score').textContent = '0';
+  if (state.mode === 'level') {
+    $('#hud-goal-text').textContent = `0 / ${state.goal}`;
+    $('#hud-goal-fill').style.width = '0%';
+  }
   renderHearts();
   const level = state.mode === 'level';
   const immortal = state.mode === 'immortal';
@@ -864,7 +1024,7 @@ function startLevel(i) {
   state.levelIndex = i;
   state.params = { burst: 0, specials: {}, ...LEVELS[i] };
   state.goal = state.params.goal;
-  state.target = state.params.target ?? null;
+  state.target = state.params.target != null ? state.params.target : null;
   resetRun();
   setTheme(state.params.theme);
   setupHud();
@@ -1021,7 +1181,7 @@ function buildLevelGrid() {
       sfx.unlock();
       if (locked) {
         sfx.boing();
-        btn.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 250 });
+        if (btn.animate) btn.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 250 });
         return;
       }
       startLevel(i);
@@ -1029,6 +1189,51 @@ function buildLevelGrid() {
     grid.appendChild(btn);
   });
   $('#total-stars').textContent = `★ ${total} / ${LEVELS.length * 3}`;
+}
+
+function buildThemeGrid() {
+  const grid = $('#theme-grid');
+  grid.querySelectorAll('canvas').forEach((c) => { c.width = 0; c.height = 0; });
+  grid.innerHTML = '';
+  for (const sc of SCENES) {
+    const btn = document.createElement('button');
+    btn.className = 'theme-card' + (sc.id === save.scene ? ' selected' : '');
+    btn.setAttribute('aria-label', sc.name);
+    btn.setAttribute('aria-pressed', String(sc.id === save.scene));
+    const cv = document.createElement('canvas');
+    btn.append(cv);
+    btn.insertAdjacentHTML('beforeend', `<span class="check">✓</span><span class="theme-name">${sc.icon} ${sc.name}</span>`);
+    btn.addEventListener('click', () => {
+      sfx.unlock();
+      sfx.chime([0, 4, 7], 784, 0.05);
+      setScene(sc.id);
+      grid.querySelectorAll('.theme-card').forEach((c) => {
+        const on = c === btn;
+        c.classList.toggle('selected', on);
+        c.setAttribute('aria-pressed', String(on));
+      });
+    });
+    grid.append(btn);
+  }
+  // paint the little previews once the cards have a size
+  requestAnimationFrame(() => {
+    grid.querySelectorAll('canvas').forEach((cv, i) => {
+      const r = cv.getBoundingClientRect();
+      const w = Math.max(60, r.width);
+      const h = Math.max(75, r.height);
+      const s = Math.min(2, window.devicePixelRatio || 1);
+      // draw the scene as if on a phone-sized screen, then shrink it into the card
+      const vw = 360;
+      const vh = (360 * h) / w;
+      cv.width = Math.round(w * s);
+      cv.height = Math.round(h * s);
+      const c = cv.getContext('2d');
+      c.scale((w * s) / vw, (h * s) / vh);
+      paintScene(c, vw, vh, SCENES[i].id, 0);
+      const anim = createAnimator(SCENES[i].id);
+      for (let k = 0; k < 3; k++) anim.draw(c, vw, vh, 2 + k, k === 0 ? 0 : 1.2);
+    });
+  });
 }
 
 function updateTitle() {
@@ -1058,6 +1263,7 @@ document.addEventListener('click', (e) => {
   switch (action) {
     case 'levels': buildLevelGrid(); showScreen('screen-levels'); break;
     case 'endless': startEndless(); break;
+    case 'themes': buildThemeGrid(); showScreen('screen-themes'); break;
     case 'immortal': startImmortal(); break;
     case 'home': goHome(); break;
     case 'pause': pause(); break;
@@ -1112,8 +1318,10 @@ window.addEventListener('appinstalled', () => {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
-window.addEventListener('resize', resize);
+window.addEventListener('resize', () => { perf.hold = 1.5; resize(); });
 resize();
+// the Wild West sign uses the game font: repaint once it has loaded
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => rebuildBackground(false));
 sfx.setMuted(save.muted);
 updateSoundButtons();
 updateTitle();
@@ -1127,4 +1335,4 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 }
 
 // expose a tiny hook for automated testing
-window.__bubbles = { state, get bubbles() { return bubbles; }, startLevel, startEndless, startImmortal };
+window.__bubbles = { get quality() { return quality; }, state, get bubbles() { return bubbles; }, startLevel, startEndless, startImmortal };

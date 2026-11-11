@@ -21,12 +21,22 @@ export function unlock() {
     comp.ratio.value = 6;
     master = ctx.createGain();
     master.gain.value = muted ? 0 : 0.9;
-    master.connect(comp).connect(ctx.destination);
+    master.connect(comp);
+    comp.connect(ctx.destination);
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.25, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
-  if (ctx.state === 'suspended') ctx.resume();
+  if (ctx.state !== 'running') {
+    if (ctx.resume) ctx.resume();
+    // older iOS only unlocks audio after something actually plays inside a tap
+    try {
+      const s = ctx.createBufferSource();
+      s.buffer = ctx.createBuffer(1, 1, 22050);
+      s.connect(ctx.destination);
+      s.start(0);
+    } catch (err) { /* ignore */ }
+  }
 }
 
 export function suspend() { if (ctx && ctx.state === 'running') ctx.suspend(); }
@@ -44,7 +54,8 @@ function tone({ type = 'sine', f0, f1, dur, vol = 0.3, delay = 0, attack = 0.005
   g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(vol, t + attack);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(master);
+  o.connect(g);
+  g.connect(master);
   o.start(t);
   o.stop(t + dur + 0.02);
 }
@@ -60,14 +71,21 @@ function noise({ dur = 0.05, vol = 0.2, freq = 3000, delay = 0 }) {
   const g = ctx.createGain();
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  s.connect(f).connect(g).connect(master);
+  s.connect(f);
+  f.connect(g);
+  g.connect(master);
   s.start(t);
   s.stop(t + dur + 0.02);
 }
 
 // pitch: 1 = normal. Bigger bubbles pop lower, combos climb higher.
+let lastPop = 0;
 export function pop(pitch = 1) {
   if (!ready()) return;
+  // many pops in the same instant (rainbow chains, swipes) sound like one
+  // anyway; skipping the extras saves a lot of audio work on slower devices
+  if (ctx.currentTime - lastPop < 0.035) return;
+  lastPop = ctx.currentTime;
   const p = pitch * (0.92 + Math.random() * 0.16);
   tone({ f0: 280 * p, f1: 1100 * p, dur: 0.09, vol: 0.35 });
   tone({ type: 'triangle', f0: 900 * p, f1: 1500 * p, dur: 0.06, vol: 0.08, delay: 0.01 });

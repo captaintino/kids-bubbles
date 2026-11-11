@@ -1,6 +1,6 @@
 // Service worker: caches the whole game so it works offline.
 // Bump VERSION whenever any file below changes so players get the update.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = `bubble-pop-party-${VERSION}`;
 
 const ASSETS = [
@@ -12,6 +12,7 @@ const ASSETS = [
   './js/audio.js',
   './js/levels.js',
   './js/sprites.js',
+  './js/scenes.js',
   './fonts/fredoka-latin.woff2',
   './icons/icon.svg',
   './icons/icon-192.png',

@@ -35,6 +35,9 @@
         <button class="btn btn-orange btn-small" data-action="immortal">
           <span class="btn-icon">💫</span> Endless Immortal
         </button>
+        <button class="btn btn-purple btn-small" data-action="themes">
+          <span class="btn-icon">🎨</span> Themes
+        </button>
         <button class="btn btn-green btn-small hidden" id="install-btn" data-action="install">
           <span class="btn-icon">📲</span> Install
         </button>
@@ -50,6 +53,17 @@
       <h2 class="heading">Pick a Level</h2>
       <div class="level-grid" id="level-grid"></div>
       <div class="total-stars" id="total-stars"></div>
+      <button class="btn btn-purple btn-small" data-action="home">
+        <span class="btn-icon">🏠</span> Back
+      </button>
+    </div>
+  </section>
+
+  <!-- Theme (world) picker -->
+  <section id="screen-themes" class="screen">
+    <div class="panel themes-panel">
+      <h2 class="heading">Pick a World</h2>
+      <div class="theme-grid" id="theme-grid"></div>
       <button class="btn btn-purple btn-small" data-action="home">
         <span class="btn-icon">🏠</span> Back
       </button>
@@ -110,5 +124,10 @@
   </section>
 
   <script type="module" src="js/main.js"></script>
+  <script nomodule>
+    document.body.insertAdjacentHTML('beforeend',
+      '<p style="position:fixed;left:0;right:0;top:40%;padding:20px;text-align:center;font:600 22px sans-serif;color:#fff">' +
+      'Sorry! This browser is too old for Bubble Pop Party. Please update it to play.</p>');
+  </script>
 </body>
 </html>

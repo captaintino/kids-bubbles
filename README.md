@@ -19,6 +19,10 @@ It's an installable **Progressive Web App**: once it has loaded, it works fully 
 - **Endless**: bubbles keep coming faster and faster. Try to beat your best score!
 - **Endless Immortal**: a relaxed mode with no hearts, so you can't lose. Drag your finger around to pop every bubble it touches, leaving a sparkly trail. Use the pause button to stop. It keeps its own best score.
 
+**Themes:** pick a world for the background: Bubble Party (its colors change by level), Under the Sea,
+Wild West, Knights & Castles, or Outer Space. Each one has a few moving details (fish, a tumbleweed,
+waving flags, a rocket...).
+
 You have 5 hearts. A bubble that floats away costs one heart. Progress, best score and the
 sound setting are saved on the device.
 
@@ -29,6 +33,11 @@ sound setting are saved on the device.
 - All sounds are made live with the Web Audio API, so there are no audio files.
 - The [Fredoka](https://github.com/hafontia/Fredoka-One) font is included in `fonts/` (SIL Open Font License), so it works offline.
 - `sw.js` caches every file the first time the game loads.
+- Built to run fast on older tablets. Each world is painted once and then copied to the screen every
+  frame, and particles and text are pre-drawn images. If frames still come in slowly, the game lowers
+  its resolution and effects by itself.
+- Works back to iOS 12 / Safari 12 (e.g. the original iPad Air): touch-event fallback when Pointer Events
+  are missing, and no newer JS/CSS syntax (`??`, `?.`, `clamp()`, flex `gap`, `inset`, `aspect-ratio`).
 
 ## Hosting on GitHub Pages
 
