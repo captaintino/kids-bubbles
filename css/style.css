@@ -84,7 +84,19 @@ canvas#game {
   width: 100%;
   max-width: 420px;
   max-height: 100%;
+  /* Menus scroll when they don't fit. The screen around them lets touches
+     through to the bubbles behind, but the panel itself must catch them,
+     or a drag would go to the game canvas (which never scrolls). */
+  pointer-events: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding: 10px 0;
 }
+/* keep items full size inside a scrolling panel instead of squashing them */
+.panel > * { flex-shrink: 0; }
 
 .card {
   background: linear-gradient(160deg, rgba(255,255,255,.38), rgba(255,255,255,.14));
@@ -341,9 +353,6 @@ canvas#game {
   grid-gap: 14px;
   gap: 14px;
   width: min(380px, 92vw);
-  max-height: calc(100vh - 220px);
-  max-height: calc(100dvh - 220px);
-  overflow-y: auto;
   padding: 6px;
   -webkit-overflow-scrolling: touch;
 }
@@ -572,7 +581,8 @@ canvas#game {
 .result-best { font-size: 20px; font-weight: 600; min-height: 4px; }
 .result-best.new { color: #ffe86b; animation: bump .6s ease infinite; }
 
-@media (max-height: 560px) {
+@media (max-height: 560px) and (orientation: landscape) {
+  .panel { max-width: 94vw; }
   .logo { font-size: max(36px, min(10vh, 64px)); }
   .tagline { margin: 0; }
   .title-panel > * + * { margin-top: 8px; }
@@ -596,4 +606,15 @@ canvas#game {
   .level-grid { grid-template-columns: repeat(6, 1fr); grid-auto-rows: calc((min(560px, 90vw) - 80px) / 6); width: min(560px, 90vw); }
   .card { padding: 16px; }
   .result-stars { font-size: 44px; }
+}
+
+/* (kept last so it overrides the base sizes above) */
+@media (max-width: 420px) {
+  /* leave room around the centered score on narrow phones */
+  .heart { width: 21px; height: 21px; }
+  .score-pill { min-width: 84px; padding: 4px 14px 6px; font-size: 26px; }
+}
+@media (max-width: 360px) {
+  .heart { width: 18px; height: 18px; }
+  .heart + .heart { margin-left: 1px; }
 }

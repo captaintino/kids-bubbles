@@ -1018,8 +1018,26 @@ function resetRun() {
   state.endlessTheme = -1;
 }
 
+// In a browser tab, go fullscreen when a game starts (Android, iPad). On Android
+// this means a swipe from the screen edge first just shows the system bars,
+// instead of jumping straight to another app mid-game. Installed apps already
+// run fullscreen, and iPhones don't allow it, so then this does nothing.
+function goFullscreen() {
+  const mq = (q) => window.matchMedia && window.matchMedia(q).matches;
+  if (navigator.standalone || mq('(display-mode: fullscreen)') || mq('(display-mode: standalone)')) return;
+  if (document.fullscreenElement || document.webkitFullscreenElement) return;
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) return;
+  try {
+    const p = req.call(el, { navigationUI: 'hide' });
+    if (p && p.catch) p.catch(() => { /* not allowed here: keep playing normally */ });
+  } catch (err) { /* ignore */ }
+}
+
 function startLevel(i) {
   sfx.unlock();
+  goFullscreen();
   state.mode = 'level';
   state.levelIndex = i;
   state.params = { burst: 0, specials: {}, ...LEVELS[i] };
@@ -1035,6 +1053,7 @@ function startLevel(i) {
 
 function startEndless() {
   sfx.unlock();
+  goFullscreen();
   state.mode = 'endless';
   state.target = null;
   resetRun();
@@ -1046,6 +1065,7 @@ function startEndless() {
 
 function startImmortal() {
   sfx.unlock();
+  goFullscreen();
   state.mode = 'immortal';
   state.target = null;
   resetRun();
